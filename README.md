@@ -124,8 +124,3 @@ ________________________________________
 1. AI isn’t just a buzzword—it’s a practical tool to increase your job chances
 2. Resume Analyzer gives concrete, actionable suggestions
 3.	Integration with modern cloud tools like Azure ensures scalability and performance
-________________________________________
-👨‍💻 Contributors:
-1.	Pranish Raj Tuladhar
-2. Ryan Ratna Tuladhar
-3.	Sanjil Shilakar
