@@ -33,16 +33,16 @@ public class PromptController {
     @Value("${openai.api.key:}")
     private String openaiApiKey;
 
-    @Value("${openai.model:gpt-3.5-turbo}")
+    @Value("${openai.model:gpt-4o-mini}")
     private String openaiModel;
+
+    private OpenAIClient client;
+    private String lastActiveKey;
 
     @PostMapping("/answer")
     public List<String> getMethodName(@RequestBody PromptQuestion promptQuestion) {
-    	
         List<String> responseList = new ArrayList<>();
         try {
-            OpenAIClientBuilder builder = new OpenAIClientBuilder();
-            
             String activeKey;
             String activeEndpoint;
             String modelId;
@@ -52,36 +52,37 @@ public class PromptController {
                 activeKey = openaiApiKey;
                 activeEndpoint = "https://api.openai.com/v1";
                 modelId = openaiModel;
-                System.out.println("Using Standard OpenAI API with key prefix: " + activeKey.substring(0, 7) + " and model: " + modelId);
             } else {
                 activeKey = azureOpenaiKey;
                 activeEndpoint = endpoint;
                 modelId = deploymentOrModelId;
-                System.out.println("Using Azure OpenAI API at endpoint: " + activeEndpoint);
             }
 
-            OpenAIClient client = builder
-                    .endpoint(activeEndpoint)
-                    .credential(new AzureKeyCredential(activeKey))
-                    .buildClient();
+            // Sync Client Cache Logic
+            if (client == null || !activeKey.equals(lastActiveKey)) {
+                client = new OpenAIClientBuilder()
+                        .endpoint(activeEndpoint)
+                        .credential(new AzureKeyCredential(activeKey))
+                        .buildClient();
+                lastActiveKey = activeKey;
+            }
 
             List<ChatMessage> messages = new ArrayList<>();
             messages.add(new ChatMessage(ChatRole.SYSTEM).setContent(
-                "You are a Senior Career Strategy Consultant and Master Resume Expert. Analyze the provided resume against the job description and return a detailed report strictly in this format:\n" +
-                "1. Score: [A score out of 100 based on keyword match, relevance, and formatting clarity]\n" +
-                "2. Missing Skills: [Provide a comprehensive list of technical and soft skills missing based on current industry trends]\n" +
-                "3. Core Improvements: [Suggest specific improvements for: Professional Summary, Skills Section, Experience Descriptions, and Project sections. Link them directly to the job description.]\n" +
-                "4. Improvements & Grammar: [Identify weak/vague statements and rewrite them professionally with strong action verbs. Structure every entry as:\n" +
-                "   Current Phrase: \"[Generic or weak line]\" -> Better Version: \"[Action-oriented, quantified line]\"]\n" +
-                "5. Suitable Job Roles: [5 roles this candidate is ready for with brief justifications]\n" +
-                "6. Action Plan: [A practical, concise 3-step action plan to improve current profile]"
+                "You are an elite Career Coach and ATS Expert. Provide a deep, exhaustive analysis strictly in this structure:\n" +
+                "1. Score: [X/100] (Realistic ATS compatibility score)\n" +
+                "2. Missing Skills: [Technical stack and soft skills required by the JD but absent in the resume]\n" +
+                "3. Core Improvements: [Detailed structural and content-based critique mentioning specific missing resume sections]\n" +
+                "4. Phrasing Update: [Current vs Suggested lines. Focus on transforming passive tasks into quantified, result-oriented 'Action Verbs + Task + Result' bullets]\n" +
+                "5. Action Plan: [A step-by-step 3-day roadmap to make this resume interview-ready]\n" +
+                "6. Career Path Insights: [Potential roles where this resume would be a strong fit based on current skills]"
             ));
-            messages.add(new ChatMessage(ChatRole.USER).setContent(getPrompt(promptQuestion)));
+            messages.add(new ChatMessage(ChatRole.USER).setContent(promptQuestion.getQuestion().trim()));
 
             ChatCompletionsOptions options = new ChatCompletionsOptions(messages)
-                    .setTemperature(0.7)
-                    .setTopP(0.95)
-                    .setMaxTokens(1200);
+                    .setTemperature(0.4) 
+                    .setTopP(0.9)
+                    .setMaxTokens(1500); 
 
             ChatCompletions completions = client.getChatCompletions(modelId, options);
 
@@ -89,25 +90,52 @@ public class PromptController {
                 responseList.add(choice.getMessage().getContent().trim());
             }
         } catch (Exception ex) {
-            System.out.println("Using mock response because API key is invalid or absent.");
-            String mockResult = "1. Score: 82/100\n\n" +
-                "2. Missing Skills: AWS (S3/EC2), Kubernetes, CI/CD Pipelines, Jest, GraphQL, JIRA, Agile Methodologies\n\n" +
-                "3. Improvements & Grammar: \n" +
-                "   - Current Phrase: \"Worked on Java and Spring Boot.\" -> Better Version: \"Architected high-performance Microservices using Spring Boot and Java 21, achieving a 15% reduction in API response latency.\"\n" +
-                "   - Current Phrase: \"Helped in AI team.\" -> Better Version: \"Collaborated with AI engineering team to integrate OpenAI GPT-4 APIs, automating data extraction for 500+ daily documents.\"\n" +
-                "   - Current Phrase: \"Good understanding of frontend.\" -> Better Version: \"Engineered responsive, state-driven frontends using React and Redux, improving user engagement by 25%.\"\n\n" +
-                "4. Suitable Job Roles: Backend Engineer, Java Developer, Full Stack Developer, API Integration Specialist, Junior DevOps Engineer\n\n" +
+            String questionText = promptQuestion.getQuestion();
+            String resumePart = "";
+            String jdPart = "";
+            try {
+                resumePart = questionText.substring(questionText.indexOf("Here is the resume:"), questionText.indexOf("Job Description:")).toLowerCase();
+                jdPart = questionText.substring(questionText.indexOf("Job Description:")).toLowerCase();
+            } catch (Exception sepCheck) {
+                resumePart = questionText.toLowerCase();
+                jdPart = questionText.toLowerCase();
+            }
+
+            // --- Dynamic Rule-Based Analysis Fallback ---
+            // Extract some basic words to see if they match
+            String[] commonTech = {"java", "spring", "docker", "kubernetes", "aws", "python", "sql", "react", "agile", "jenkins", "git", "cloud"};
+            int matchCount = 0;
+            StringBuilder missing = new StringBuilder();
+            
+            for (String tech : commonTech) {
+                if (jdPart.contains(tech)) {
+                    if (resumePart.contains(tech)) matchCount++;
+                    else missing.append(tech).append(", ");
+                }
+            }
+            
+            // Calculate a localized score based on length and fake keywords (65 to 95)
+            int baseScore = 65;
+            baseScore += Math.min(15, (resumePart.length() / 500)); // length bonus
+            baseScore += (matchCount * 2); // keyword bonus
+            baseScore = Math.min(98, baseScore); // cap at 98
+
+            String missingSkillsText = missing.length() > 0 ? missing.substring(0, missing.length() - 2) : "Cloud Infrastructure, System Design";
+            
+            String personalizedMock = "1. Score: " + baseScore + "/100\n\n" +
+                "2. Missing Skills: " + missingSkillsText + " (Warning: OpenAI Key Not Configured, this is a local fallback analysis).\n\n" +
+                "3. Core Improvements: \n" +
+                "   - Your resume length is " + (resumePart.length() < 1000 ? "a bit short" : "very comprehensive") + ". Ensure you are quantifying your accomplishments.\n" +
+                "   - You matched " + matchCount + " core industry keywords locally. Upgrade your OpenAI key to deeply evaluate context.\n\n" +
+                "4. Phrasing Update: \n" +
+                "   - Current: \"Worked on related projects.\" -> Better: \"Spearheaded key project initiatives resulting in 20% efficiency gains.\"\n\n" +
                 "5. Action Plan: \n" +
-                "   - Add 2 quantitative metrics for each professional experience bullet.\n" +
-                "   - Complete a basic AWS certification to show cloud proficiency.\n" +
-                "   - Include a section for Soft Skills such as 'Stakeholder Management' or 'Agile Team Leadership'.";
-            responseList.add(mockResult);
+                "   - Day 1: Update src/main/resources/application.properties with an actual 'openai.api.key' for real AI!\n" +
+                "   - Day 2: Quantify " + (baseScore < 75 ? "all" : "your top") + " bullet points.\n\n" +
+                "6. Career Path Insights: Software Engineer, Tech Lead, System Architect.";
+                
+            responseList.add(personalizedMock);
         }
         return responseList;
-    }
-
-    private String getPrompt(PromptQuestion promptQuestion) {
-        String input = promptQuestion.getQuestion().trim();        
-        return input;
     }
 }

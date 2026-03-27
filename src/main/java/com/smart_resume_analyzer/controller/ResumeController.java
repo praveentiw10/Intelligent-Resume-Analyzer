@@ -74,6 +74,7 @@ public class ResumeController {
             Map<String, Object> result = new HashMap<>();
             result.put("score", score);
             result.put("suggestions", suggestions);
+            result.put("resumeText", resumeText);
             return ResponseEntity.ok(result);
 
         } catch (Exception e) {

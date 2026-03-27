@@ -60,6 +60,15 @@ azure.openai.endpoint=...
 ```
 
 ### 🚀 Running the App
+The project includes convenience scripts to automatically set up the correct Java environment and start the application.
+
+**Option A: Simple Run (Recommended)**
+Double-click `run.bat` or run:
+```powershell
+.\run.ps1
+```
+
+**Option B: Manual Run**
 1. Clone the repository:
    ```bash
    git clone https://github.com/praveentiw10/Intelligent-Resume-Analyzer.git
